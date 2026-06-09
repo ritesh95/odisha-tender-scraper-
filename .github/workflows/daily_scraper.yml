@@ -1,0 +1,48 @@
+name: Daily Tender Scraper
+
+on:
+  schedule:
+    - cron: "30 3 * * *"   # 9:00 AM IST
+    - cron: "30 9 * * *"   # 3:00 PM IST
+  workflow_dispatch:        # manual trigger from GitHub UI
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      TWOCAPTCHA_API_KEY:   ${{ secrets.TWOCAPTCHA_API_KEY }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: |
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Run scraper
+        run: python main.py
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "=========================================="
+          echo "SCRAPER FAILED at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Workflow: $GITHUB_WORKFLOW"
+          echo "Run ID:   $GITHUB_RUN_ID"
+          echo "Logs:     $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          echo "=========================================="
