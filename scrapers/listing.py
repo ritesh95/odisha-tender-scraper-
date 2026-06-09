@@ -8,6 +8,8 @@ from twocaptcha import TwoCaptcha
 
 load_dotenv()
 
+IN_CI = os.environ.get("GITHUB_ACTIONS") == "true"
+
 BASE_URL = "https://tendersodisha.gov.in"
 LISTING_URL = f"{BASE_URL}/nicgep/app?page=FrontEndLatestActiveTenders&service=page"
 NEXT_URL    = f"{BASE_URL}/nicgep/app?component=loadNext&page=FrontEndLatestActiveTenders&service=direct&session=T"
@@ -104,7 +106,11 @@ def run_listing_scraper(target_date=None):
 
     playwright = sync_playwright().start()
     try:
-        browser = playwright.chromium.launch(headless=True)
+        # In CI use system Chrome (avoids playwright install-deps issues on Ubuntu 24.04)
+        launch_opts = {"headless": True}
+        if IN_CI:
+            launch_opts["channel"] = "chrome"
+        browser = playwright.chromium.launch(**launch_opts)
         # browser = playwright.chromium.launch(headless=False)  # debug
         context = browser.new_context(user_agent=USER_AGENT)
         page    = context.new_page()
