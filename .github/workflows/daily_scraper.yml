@@ -14,7 +14,7 @@ jobs:
     env:
       SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-      CAPTCHA_API_KEY:      ${{ secrets.TWOCAPTCHA_API_KEY }}
+      CAPTCHA_API_KEY:      ${{ secrets.CAPTCHA_API_KEY }}
 
     steps:
       - name: Checkout code
