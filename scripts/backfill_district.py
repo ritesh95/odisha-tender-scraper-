@@ -16,7 +16,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from scrapers.detail import _district_from_location, PINCODE_DISTRICT
+from scrapers.detail import _derive_district
 from db.supabase_client import supabase
 from utils.logger import get_logger
 
@@ -26,12 +26,8 @@ PAGE_SIZE = 1000
 
 
 def recompute_district(location, pincode):
-    """Same precedence as scrapers.detail.derive_fields: location, then pincode."""
-    district = _district_from_location(location)
-    if not district:
-        pincode = pincode or ""
-        district = PINCODE_DISTRICT.get(pincode[:3]) if len(pincode) >= 3 else None
-    return district
+    """Same precedence as scrapers.detail.derive_fields: pincode map, then location."""
+    return _derive_district(pincode, location)
 
 
 def fetch_all_rows():
