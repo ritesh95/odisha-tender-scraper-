@@ -37,31 +37,81 @@ INTEGER_FIELDS  = {"bid_validity_days", "period_of_work_days"}
 DATE_FIELDS     = {"published_date", "bid_opening_date", "bid_submission_end", "doc_download_end"}
 
 # ---------------------------------------------------------------------------
-# Odisha pincode prefix → district
+# District derivation
+#
+# District is resolved in two steps (see `_derive_district`):
+#   1. Authoritative exact-pincode → district map (India Post data, in
+#      pincode_district.PIN_DISTRICT). This is the source of truth.
+#   2. Fallback: match the scraped `location` free-text against the Odisha
+#      district list / known aliases, for pincodes not yet in the map.
+#
+# Spellings here MUST match the web app's canonical district names (e.g.
+# "Sonepur" not "Subarnapur", "Sundargarh" not "Sundergarh"), since the
+# frontend builds /districts/<name> pages keyed on these exact strings.
 # ---------------------------------------------------------------------------
-PINCODE_DISTRICT = {
-    "751": "Khordha",
-    "752": "Puri",
-    "753": "Cuttack",
-    "754": "Cuttack",
-    "755": "Jagatsinghpur",
-    "756": "Balasore",
-    "757": "Mayurbhanj",
-    "758": "Keonjhar",
-    "759": "Dhenkanal",
-    "760": "Ganjam",
-    "761": "Ganjam",
-    "762": "Kandhamal",
-    "763": "Koraput",
-    "764": "Nabarangpur",
-    "765": "Rayagada",
-    "766": "Kalahandi",
-    "767": "Balangir",
-    "768": "Bargarh",
-    "769": "Jharsuguda",
-    "770": "Sundargarh",
-    "771": "Nuapada",
+from scrapers.pincode_district import PIN_DISTRICT
+
+ODISHA_DISTRICTS = [
+    "Angul", "Balangir", "Balasore", "Bargarh", "Bhadrak", "Boudh",
+    "Cuttack", "Deogarh", "Dhenkanal", "Gajapati", "Ganjam",
+    "Jagatsinghpur", "Jajpur", "Jharsuguda", "Kalahandi", "Kandhamal",
+    "Kendrapara", "Keonjhar", "Khordha", "Koraput", "Malkangiri",
+    "Mayurbhanj", "Nabarangpur", "Nayagarh", "Nuapada", "Puri",
+    "Rayagada", "Sambalpur", "Sonepur", "Sundargarh",
+]
+
+# Common spelling variants / alternate names / major cities → canonical district.
+# Keys are lowercase; matching is case-insensitive and whole-word.
+DISTRICT_ALIASES = {
+    "sundergarh": "Sundargarh", "sundergad": "Sundargarh", "rourkela": "Sundargarh",
+    "rajgangpur": "Sundargarh", "bonai": "Sundargarh",
+    "baleswar": "Balasore", "baleshwar": "Balasore",
+    "kendujhar": "Keonjhar",
+    "jajapur": "Jajpur",
+    "baudh": "Boudh",
+    "subarnapur": "Sonepur", "sonpur": "Sonepur", "sonapur": "Sonepur",
+    "bolangir": "Balangir",
+    "nabarangapur": "Nabarangpur",
+    "anugul": "Angul",
+    "khorda": "Khordha", "khurda": "Khordha", "bhubaneswar": "Khordha", "bhubaneshwar": "Khordha",
+    "berhampur": "Ganjam", "brahmapur": "Ganjam",
+    "jeypore": "Koraput",
+    "debagarh": "Deogarh",
+    "jagatsinghapur": "Jagatsinghpur",
 }
+
+
+def _district_from_location(location):
+    """Match a scraped location string to a canonical Odisha district.
+
+    Tries exact district names first, then known aliases / city names.
+    Matching is case-insensitive and word-boundary based so 'Sundergarh'
+    or 'Rourkela, Sundargarh' both resolve to 'Sundargarh'.
+    Returns the canonical district name or None.
+    """
+    if not location:
+        return None
+    text = location.lower()
+
+    # Canonical district names (longest first to avoid partial shadowing).
+    for district in sorted(ODISHA_DISTRICTS, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(district.lower())}\b", text):
+            return district
+
+    # Aliases / alternate spellings / major cities.
+    for alias, district in DISTRICT_ALIASES.items():
+        if re.search(rf"\b{re.escape(alias)}\b", text):
+            return district
+
+    return None
+
+
+def _derive_district(pincode, location):
+    """Resolve district: authoritative pincode map first, then location text."""
+    pin = (pincode or "").strip()
+    if pin in PIN_DISTRICT:
+        return PIN_DISTRICT[pin]
+    return _district_from_location(location)
 
 
 # ---------------------------------------------------------------------------
@@ -354,9 +404,8 @@ def derive_fields(data):
         wt = "Other"
     data["work_type"] = wt
 
-    # district from pincode prefix
-    pincode = data.get("pincode") or ""
-    data["district"] = PINCODE_DISTRICT.get(pincode[:3]) if len(pincode) >= 3 else None
+    # district: authoritative exact-pincode map first, then location text.
+    data["district"] = _derive_district(data.get("pincode"), data.get("location"))
 
     # value_band from tender_value
     val = data.get("tender_value")
