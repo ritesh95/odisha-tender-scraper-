@@ -37,14 +37,45 @@ INTEGER_FIELDS  = {"bid_validity_days", "period_of_work_days"}
 DATE_FIELDS     = {"published_date", "bid_opening_date", "bid_submission_end", "doc_download_end"}
 
 # ---------------------------------------------------------------------------
-# Odisha pincode prefix → district
+# Odisha districts — district is derived primarily from the scraped `location`
+# text (authoritative), and only falls back to the pincode-prefix map below.
 # ---------------------------------------------------------------------------
+ODISHA_DISTRICTS = [
+    "Angul", "Balangir", "Balasore", "Bargarh", "Bhadrak", "Boudh",
+    "Cuttack", "Deogarh", "Dhenkanal", "Gajapati", "Ganjam",
+    "Jagatsinghpur", "Jajpur", "Jharsuguda", "Kalahandi", "Kandhamal",
+    "Kendrapara", "Keonjhar", "Khordha", "Koraput", "Malkangiri",
+    "Mayurbhanj", "Nabarangpur", "Nayagarh", "Nuapada", "Puri",
+    "Rayagada", "Sambalpur", "Subarnapur", "Sundargarh",
+]
+
+# Common spelling variants / alternate names / major cities → canonical district.
+# Keys are lowercase; matching is case-insensitive and whole-word.
+DISTRICT_ALIASES = {
+    "sundergarh": "Sundargarh", "sundergad": "Sundargarh", "rourkela": "Sundargarh",
+    "rajgangpur": "Sundargarh", "bonai": "Sundargarh",
+    "baleswar": "Balasore", "baleshwar": "Balasore",
+    "kendujhar": "Keonjhar",
+    "jajapur": "Jajpur",
+    "baudh": "Boudh",
+    "subarnapur": "Subarnapur", "sonepur": "Subarnapur", "sonpur": "Subarnapur",
+    "bolangir": "Balangir",
+    "nabarangapur": "Nabarangpur",
+    "anugul": "Angul",
+    "khorda": "Khordha", "khurda": "Khordha", "bhubaneswar": "Khordha", "bhubaneshwar": "Khordha",
+    "berhampur": "Ganjam", "brahmapur": "Ganjam",
+    "jeypore": "Koraput",
+}
+
+# Pincode prefix → district. APPROXIMATE fallback only: a single 3-digit prefix
+# in Odisha can span multiple districts, so this is used only when `location`
+# yields no match.
 PINCODE_DISTRICT = {
     "751": "Khordha",
     "752": "Puri",
     "753": "Cuttack",
     "754": "Cuttack",
-    "755": "Jagatsinghpur",
+    "755": "Jajpur",
     "756": "Balasore",
     "757": "Mayurbhanj",
     "758": "Keonjhar",
@@ -57,11 +88,35 @@ PINCODE_DISTRICT = {
     "765": "Rayagada",
     "766": "Kalahandi",
     "767": "Balangir",
-    "768": "Bargarh",
-    "769": "Jharsuguda",
+    "768": "Sambalpur",
+    "769": "Sundargarh",
     "770": "Sundargarh",
-    "771": "Nuapada",
 }
+
+
+def _district_from_location(location):
+    """Match a scraped location string to a canonical Odisha district.
+
+    Tries exact district names first, then known aliases / city names.
+    Matching is case-insensitive and word-boundary based so 'Sundergarh'
+    or 'Rourkela, Sundargarh' both resolve to 'Sundargarh'.
+    Returns the canonical district name or None.
+    """
+    if not location:
+        return None
+    text = location.lower()
+
+    # Canonical district names (longest first to avoid partial shadowing).
+    for district in sorted(ODISHA_DISTRICTS, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(district.lower())}\b", text):
+            return district
+
+    # Aliases / alternate spellings / major cities.
+    for alias, district in DISTRICT_ALIASES.items():
+        if re.search(rf"\b{re.escape(alias)}\b", text):
+            return district
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -354,9 +409,13 @@ def derive_fields(data):
         wt = "Other"
     data["work_type"] = wt
 
-    # district from pincode prefix
-    pincode = data.get("pincode") or ""
-    data["district"] = PINCODE_DISTRICT.get(pincode[:3]) if len(pincode) >= 3 else None
+    # district: prefer the scraped location text (authoritative), then fall
+    # back to the approximate pincode-prefix map.
+    district = _district_from_location(data.get("location"))
+    if not district:
+        pincode = data.get("pincode") or ""
+        district = PINCODE_DISTRICT.get(pincode[:3]) if len(pincode) >= 3 else None
+    data["district"] = district
 
     # value_band from tender_value
     val = data.get("tender_value")
