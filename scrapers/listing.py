@@ -88,6 +88,30 @@ def _is_today(date_text, target_date):
         return False
 
 
+def _fetch_detail_html(context, page, url, attempt=1, max_attempts=3):
+    """Fetch one detail page; returns (page, html_or_None)."""
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        html = page.content()
+        if len(html) < 1000:
+            print(f"[{_ts()}]    ⚠️  HTML too short ({len(html)} chars) — skipping")
+            return page, None
+        print(f"[{_ts()}]    Preview: {html[:120]}...")
+        return page, html
+    except Exception as e:
+        print(f"[{_ts()}]    ❌ attempt {attempt}/{max_attempts}: {e}")
+        if attempt >= max_attempts:
+            return page, None
+        # Fresh page clears any stuck/interrupted navigation state
+        try:
+            page.close()
+        except Exception:
+            pass
+        page = context.new_page()
+        time.sleep(4 * attempt)  # backoff: 4s, 8s
+        return _fetch_detail_html(context, page, url, attempt + 1, max_attempts)
+
+
 def run_listing_scraper(target_date=None):
     """
     Scrape all tenders published on target_date (defaults to today).
@@ -187,19 +211,9 @@ def run_listing_scraper(target_date=None):
         # ── Fetch detail pages in the same session ─────────────────────────
         for i, url in enumerate(today_urls, 1):
             print(f"[{_ts()}] [{i}/{len(today_urls)}] Fetching detail page...")
-            try:
-                page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                time.sleep(2)
-                html = page.content()
-                if len(html) < 1000:
-                    print(f"[{_ts()}]    ⚠️  HTML too short ({len(html)} chars) — skipping")
-                    results.append((url, None))
-                else:
-                    print(f"[{_ts()}]    Preview: {html[:120]}...")
-                    results.append((url, html))
-            except Exception as e:
-                print(f"[{_ts()}]    ❌ {e}")
-                results.append((url, None))
+            time.sleep(2)  # base pacing, before the request rather than only after success
+            page, html = _fetch_detail_html(context, page, url)
+            results.append((url, html))
 
     finally:
         try:
